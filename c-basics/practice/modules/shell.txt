@@ -1,0 +1,26 @@
+$~ insmod hello.ko
+
+$~ dmesg
+...
+[40515.530173] e1000: enp0s3 NIC Link is Up 1000 Mbps Full Duplex, Flow Control: RX
+[41367.706715] hello: loading out-of-tree module taints kernel.
+[41367.706721] hello: module license 'unspecified' taints kernel.
+[41367.706723] Disabling lock debugging due to kernel taint
+[41367.706763] hello: module verification failed: signature and/or required key miss
+ing - tainting kernel
+[41367.714193] TEST: Hello, World!
+
+$~ rmmod hello.ko
+
+$~ dmesg
+...
+[40515.530173] e1000: enp0s3 NIC Link is Up 1000 Mbps Full Duplex, Flow Control: RX
+[41367.706715] hello: loading out-of-tree module taints kernel.
+[41367.706721] hello: module license 'unspecified' taints kernel.
+[41367.706723] Disabling lock debugging due to kernel taint
+[41367.706763] hello: module verification failed: signature and/or required key missing - tainting kernel
+[41367.714193] TEST: Hello, World!
+[41469.161832] TEST: Good byte!
+
+$~ make clean
+

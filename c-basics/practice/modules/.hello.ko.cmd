@@ -1,0 +1,1 @@
+cmd_/home/cs350/cs350-os161/learning/cpractice/modules/hello.ko := ld -r -m elf_x86_64 -T ./scripts/module-common.lds --build-id  -o /home/cs350/cs350-os161/learning/cpractice/modules/hello.ko /home/cs350/cs350-os161/learning/cpractice/modules/hello.o /home/cs350/cs350-os161/learning/cpractice/modules/hello.mod.o ;  true

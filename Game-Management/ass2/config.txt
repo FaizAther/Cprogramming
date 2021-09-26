@@ -1,0 +1,3 @@
+# Round 0 - Agent 1 is './2310A', Agent 2 is './2310B',
+# ./2310A goes first, map*.txt are in the current directory
+./2310A,map1.txt,./2310B,map2.txt

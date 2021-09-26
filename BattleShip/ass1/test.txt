@@ -1,0 +1,139 @@
+Setting up environment...
+Running tests
+
+Assignment1.test_badguess1                                  OK
+Assignment1.test_badguess2                                  OK
+Assignment1.test_badguess3                                  OK
+Assignment1.test_badguess4                                  FAIL
+	stdout mismatch
+Assignment1.test_badguess5                                  FAIL
+	stdout mismatch
+Assignment1.test_badguess6                                  FAIL
+	stdout mismatch
+Assignment1.test_badguess7                                  FAIL
+	stdout mismatch
+Assignment1.test_badguess8                                  FAIL
+	stdout mismatch
+Assignment1.test_badmap1                                    OK
+Assignment1.test_badmap10                                   OK
+Assignment1.test_badmap11                                   OK
+Assignment1.test_badmap12                                   OK
+Assignment1.test_badmap13                                   FAIL
+	stdout mismatch
+Assignment1.test_badmap14                                   OK
+Assignment1.test_badmap15                                   OK
+Assignment1.test_badmap16                                   OK
+Assignment1.test_badmap17                                   OK
+Assignment1.test_badmap18                                   OK
+Assignment1.test_badmap19                                   FAIL
+	stdout mismatch
+Assignment1.test_badmap2                                    OK
+Assignment1.test_badmap20                                   FAIL
+	stderr mismatchProcess received unexpected signal: 11
+Assignment1.test_badmap21                                   FAIL
+	stdout mismatch
+Assignment1.test_badmap22                                   FAIL
+	stdout mismatchProcess received unexpected signal: 6
+Assignment1.test_badmap3                                    OK
+Assignment1.test_badmap4                                    OK
+Assignment1.test_badmap5                                    FAIL
+	stderr mismatch
+Assignment1.test_badmap6                                    FAIL
+	stderr mismatch
+Assignment1.test_badmap7                                    OK
+Assignment1.test_badmap8                                    OK
+Assignment1.test_badmap9                                    OK
+Assignment1.test_badrules1                                  FAIL
+	stderr mismatch
+Assignment1.test_badrules2                                  FAIL
+	stderr mismatch
+Assignment1.test_badrules3                                  FAIL
+	stdout mismatch
+Assignment1.test_badrules4                                  FAIL
+	stderr mismatch
+Assignment1.test_badrules5                                  FAIL
+	stderr mismatch
+Assignment1.test_badrules6                                  FAIL
+	stdout mismatch
+Assignment1.test_badrules7                                  FAIL
+	stderr mismatchProcess received unexpected signal: 6
+Assignment1.test_badrules8                                  FAIL
+	stdout mismatch
+Assignment1.test_badrules9                                  FAIL
+	stdout mismatch
+Assignment1.test_eastfull1                                  OK
+Assignment1.test_eastfull2                                  OK
+Assignment1.test_eastfull3                                  OK
+Assignment1.test_eastfull4                                  OK
+Assignment1.test_eastfull5                                  FAIL
+	stdout mismatch
+Assignment1.test_eastfull6                                  OK
+Assignment1.test_eastfull7                                  OK
+Assignment1.test_easthit1                                   OK
+Assignment1.test_easthit2                                   OK
+Assignment1.test_easthit3                                   OK
+Assignment1.test_easthit4                                   OK
+Assignment1.test_eastmiss1                                  OK
+Assignment1.test_eastmiss2                                  OK
+Assignment1.test_eastmiss3                                  OK
+Assignment1.test_eastmiss4                                  OK
+Assignment1.test_eastsunk1                                  OK
+Assignment1.test_eastsunk2                                  OK
+Assignment1.test_eastsunk3                                  OK
+Assignment1.test_eastsunk4                                  OK
+Assignment1.test_full1                                      OK
+Assignment1.test_full10                                     OK
+Assignment1.test_full11                                     FAIL
+	stdout mismatch
+Assignment1.test_full12                                     FAIL
+	stdout mismatch
+Assignment1.test_full13                                     FAIL
+	stdout mismatch
+Assignment1.test_full14                                     FAIL
+	stdout mismatch
+Assignment1.test_full15                                     OK
+Assignment1.test_full16                                     FAIL
+	stdout mismatch
+Assignment1.test_full17                                     FAIL
+	stdout mismatch
+Assignment1.test_full2                                      OK
+Assignment1.test_full3                                      FAIL
+	stdout mismatch
+Assignment1.test_full4                                      FAIL
+	stdout mismatch
+Assignment1.test_full5                                      FAIL
+	stdout mismatch
+Assignment1.test_full6                                      FAIL
+	stdout mismatch
+Assignment1.test_full7                                      FAIL
+	stdout mismatch
+Assignment1.test_full8                                      OK
+Assignment1.test_full9                                      OK
+Assignment1.test_hit1                                       OK
+Assignment1.test_hit2                                       OK
+Assignment1.test_hit3                                       OK
+Assignment1.test_hit4                                       OK
+Assignment1.test_miss1                                      OK
+Assignment1.test_miss2                                      OK
+Assignment1.test_miss3                                      OK
+Assignment1.test_miss4                                      OK
+Assignment1.test_miss5                                      FAIL
+	stdout mismatch
+Assignment1.test_miss6                                      FAIL
+	stdout mismatch
+Assignment1.test_sunk1                                      OK
+Assignment1.test_sunk2                                      OK
+Assignment1.test_sunk3                                      OK
+Assignment1.test_sunk4                                      OK
+Assignment1.test_usage1                                     OK
+Assignment1.test_usage2                                     OK
+Assignment1.test_usage3                                     OK
+Assignment1.test_usage4                                     OK
+Assignment1.test_usage5                                     OK
+Assignment1.test_usage6                                     OK
+Assignment1.test_usage7                                     OK
+Assignment1.test_usage8                                     OK
+
+----------------------------------------------------------------------
+Ran 97 tests: 62 success, 0 errors, 35 failures
+Tearing down environment...

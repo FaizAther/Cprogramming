@@ -1,0 +1,1 @@
+naval: game.c:51: game_init: Assertion `g->player_ships != ((void *)0)' failed.
