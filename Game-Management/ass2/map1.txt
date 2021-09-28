@@ -1,5 +1,0 @@
-G4 W
-F5 W
-C1 S
-E2 E
-B3 N
