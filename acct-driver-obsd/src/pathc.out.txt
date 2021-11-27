@@ -1,0 +1,15 @@
+patch -p1 < PATH/a2-boilerplate.diff
+patching file sys/arch/amd64/amd64/conf.c
+patching file sys/conf/GENERIC
+Hunk #1 succeeded at 115 (offset 1 line).
+patching file sys/conf/files
+Hunk #1 succeeded at 630 (offset 3 lines).
+patching file sys/dev/acct.h
+patching file sys/kern/kern_exec.c
+patching file sys/kern/kern_exit.c
+Hunk #1 succeeded at 70 (offset -1 lines).
+Hunk #2 succeeded at 211 (offset 2 lines).
+patching file sys/kern/kern_fork.c
+Hunk #1 succeeded at 65 (offset -1 lines).
+Hunk #2 succeeded at 477 (offset 2 lines).
+patching file sys/sys/conf.h

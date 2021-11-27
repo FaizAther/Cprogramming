@@ -1,0 +1,1421 @@
+? cscope.out
+? lib/libcrypto/obj_mac.h
+? lib/libcrypto/obj_mac.num.tmp
+? lib/librpcsvc/bootparam_prot.h
+? lib/librpcsvc/klm_prot.h
+? lib/librpcsvc/mount.h
+? lib/librpcsvc/nfs_prot.h
+? lib/librpcsvc/nlm_prot.h
+? lib/librpcsvc/rex.h
+? lib/librpcsvc/rnusers.h
+? lib/librpcsvc/rquota.h
+? lib/librpcsvc/rstat.h
+? lib/librpcsvc/rusers.h
+? lib/librpcsvc/rwall.h
+? lib/librpcsvc/sm_inter.h
+? lib/librpcsvc/spray.h
+? lib/librpcsvc/yp.h
+? lib/librpcsvc/yppasswd.h
+? sys/cscope.out
+Index: sys/arch/amd64/amd64/conf.c
+===================================================================
+RCS file: /cvs/src/sys/arch/amd64/amd64/conf.c,v
+retrieving revision 1.73
+diff -u -p -u -p -r1.73 conf.c
+--- sys/arch/amd64/amd64/conf.c	23 Jan 2021 05:08:34 -0000	1.73
++++ sys/arch/amd64/amd64/conf.c	24 Sep 2021 04:04:24 -0000
+@@ -102,6 +102,7 @@ int	nblkdev = nitems(bdevsw);
+ #define	mmwrite	mmrw
+ cdev_decl(mm);
+ cdev_decl(wd);
++#include "acct.h"
+ #include "bio.h"
+ #include "pty.h"
+ #include "com.h"
+@@ -202,7 +203,7 @@ struct cdevsw	cdevsw[] =
+ 	cdev_notdef(),			/* 21 */
+ 	cdev_fd_init(1,filedesc),	/* 22: file descriptor pseudo-device */
+ 	cdev_bpf_init(NBPFILTER,bpf),	/* 23: Berkeley packet filter */
+-	cdev_notdef(),			/* 24 */
++	cdev_acct_init(NACCT,acct),	/* 24: process accounting */
+ #if 0
+ 	cdev_ocis_init(NPCMCIA,pcmcia), /* 25: PCMCIA Bus */
+ #else
+Index: sys/conf/GENERIC
+===================================================================
+RCS file: /cvs/src/sys/conf/GENERIC,v
+retrieving revision 1.277
+diff -u -p -u -p -r1.277 GENERIC
+--- sys/conf/GENERIC	28 Apr 2021 11:32:59 -0000	1.277
++++ sys/conf/GENERIC	24 Sep 2021 04:04:25 -0000
+@@ -114,5 +114,6 @@ pseudo-device	wg		# WireGuard
+ pseudo-device	bio	1	# ioctl multiplexing device
+ 
+ pseudo-device	fuse		# fuse device
++pseudo-device	acct		# process accounting device
+ 
+ option		BOOT_CONFIG	# add support for boot -c
+Index: sys/conf/files
+===================================================================
+RCS file: /cvs/src/sys/conf/files,v
+retrieving revision 1.704
+diff -u -p -u -p -r1.704 files
+--- sys/conf/files	3 Sep 2021 16:45:45 -0000	1.704
++++ sys/conf/files	24 Sep 2021 04:04:26 -0000
+@@ -634,6 +634,9 @@ file	dev/dt/dt_prov_syscall.c	dt
+ file	dev/dt/dt_prov_static.c		dt
+ file	dev/dt/dt_prov_kprobe.c		dt
+ 
++pseudo-device acct
++file	dev/acct.c			acct	needs-flag
++
+ # XXX machine-independent SCSI files should live somewhere here, maybe
+ 
+ # kernel sources
+Index: sys/dev/acct.c
+===================================================================
+RCS file: sys/dev/acct.c
+diff -N sys/dev/acct.c
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ sys/dev/acct.c	24 Sep 2021 04:04:26 -0000
+@@ -0,0 +1,916 @@
++/*	$OpenBSD: subr_xxx.c,v 1.17 2019/05/17 03:53:08 visa Exp $	*/
++/*	$NetBSD: subr_xxx.c,v 1.10 1996/02/04 02:16:51 christos Exp $	*/
++
++/*
++ * Copyright (c) 1982, 1986, 1991, 1993
++ *	The Regents of the University of California.  All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ * 3. Neither the name of the University nor the names of its contributors
++ *    may be used to endorse or promote products derived from this software
++ *    without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
++ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
++ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++ * SUCH DAMAGE.
++ *
++ *	@(#)subr_xxx.c	8.1 (Berkeley) 6/10/93
++ */
++
++/*
++ * Miscellaneous trivial functions, including many
++ * that are often inline-expanded or done in assembler.
++ */
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/conf.h>
++#include <sys/uio.h>
++#include <sys/malloc.h>
++#include <sys/exec.h>
++#include <sys/fcntl.h>
++#include <sys/ioctl.h>
++#include <sys/poll.h>
++#include <sys/proc.h>
++#include <sys/time.h>
++#include <sys/tty.h>
++#include <sys/resourcevar.h>
++#include <sys/pool.h>
++#include <sys/pledge.h>
++#include <sys/queue.h>
++
++#include <lib/libkern/libkern.h>
++
++#include <dev/acct.h>
++
++extern int hz;
++extern int tick;
++
++/* TRK TREE DEFS */
++#include <sys/namei.h>
++#include <sys/vnode.h>
++#include <sys/tree.h>
++
++
++struct trkvnode {
++	char *trk_name;
++	u_char trk_ena;
++	u_char trk_flags;
++	struct vnode *trkvnode;
++	RBT_ENTRY(tkrvnode) trk_rbt;
++};
++
++RBT_HEAD(trkvnode_rbt, trkvnode);
++
++#define TRACK_MAX_VNODES	128
++#define TRACK_MAX_NAMES		128
++
++static inline int
++trkvnode_compare(const struct trkvnode *n1, const struct trkvnode *n2);
++
++RBT_PROTOTYPE(trkvnode_rbt, trkvnode, trk_rbt, trkvnode_compare);
++RBT_GENERATE(trkvnode_rbt, trkvnode, trk_rbt, trkvnode_compare);
++
++struct trkvnode *
++trkvnode_new(struct vnode *vnode, char *path);
++
++void
++trkvnode_delete(struct trkvnode *vnode);
++
++int
++trktree_delete_vnodes(struct trkvnode_rbt *trk);
++
++struct nameidata *
++path_to_namei(struct proc *p, char *path, struct nameidata *ndp);
++
++struct trkvnode *
++trktree_add_vnode_unlocked(struct trkvnode_rbt *trk,
++		struct vnode *vnode, char *path);
++
++struct trkvnode *
++trktree_add_vnode(struct trkvnode_rbt *trk,
++		struct vnode *vnode, char *path);
++
++struct trkvnode *
++trktree_vnoderemove(struct trkvnode_rbt *trk, struct vnode *vnode);
++
++struct trkvnode *
++trktree_vnodelookup(struct trkvnode_rbt *trk, struct vnode *vnode);
++
++struct trkvnode *
++trktree_pathremove(struct proc *p, struct trkvnode_rbt *trk, char *path);
++
++struct trkvnode *
++trktree_pathlookup(struct proc *p, struct trkvnode_rbt *trk, char *path);
++
++void
++trktree_destroy(struct trkvnode_rbt *trk);
++
++int
++trktree_parsepermissions(struct trkvnode *n, u_char ena, u_char flags);
++
++char *
++trk_path_copy(char *path);
++
++struct trkvnode *
++trktree_add_path(struct proc *p,
++		struct trkvnode_rbt *trk, char *path);
++
++/* TRK TREE DEFS END */
++
++TAILQ_HEAD(acct_ccb_list, acct_node) acct_list;
++struct acct_node {
++	TAILQ_ENTRY(acct_node)	acct_nodes;
++	struct acct_common *acc;
++} *ac_n;
++
++struct acct_ctl driver_ctl = {0};
++
++int ac_seq = 0;
++
++struct	rwlock ac_trklock = RWLOCK_INITIALIZER("ac_trklock");
++
++struct	rwlock ac_taillock = RWLOCK_INITIALIZER("ac_tailq");
++struct	rwlock ac_seqlock = RWLOCK_INITIALIZER("ac_seq");
++
++static char identifier_sleep = 0;
++
++static void
++ac_seq_reset(void)
++{
++	rw_enter_read(&ac_seqlock);
++	ac_seq = 0;
++	rw_exit_read(&ac_seqlock);
++}
++
++struct trkvnode_rbt f_tracker = {0};
++
++void
++acctattach()
++{
++	printf("acctattach\n");
++
++	TAILQ_INIT(&acct_list);
++	RBT_INIT(trkvnode_rbt, &f_tracker);
++
++	return;
++}
++
++int
++acctopen(dev_t dev, int flag, int mode, struct proc *p)
++{
++	printf("acctopen\n");
++	/* There are no non-zero minor devices */
++	if (minor(dev) != 0)
++		return (ENXIO);
++
++	printf("acctopen done\n");
++	return (0);
++}
++
++int
++acctread(dev_t dev, struct uio *uio, int i)
++{
++	printf("acctread\n");
++	int error;
++	size_t len;
++	struct acct_common *v;
++	struct acct_node *tail =  NULL;
++
++	if (driver_ctl.acct_ena == 0 && driver_ctl.acct_fcount == 0)
++		return (EINVAL);
++
++	if (uio->uio_offset < 0)
++		return (EINVAL);
++	
++	rw_enter_read(&ac_taillock);
++
++	tail = TAILQ_LAST(&acct_list, acct_ccb_list);
++	while (tail == NULL) {
++		rw_exit_read(&ac_taillock);
++		printf("i am sleeping cause tail is null\n");
++		error = tsleep_nsec(&identifier_sleep,
++				PCATCH, "tail_null", INFSLP);
++		if (error != EWOULDBLOCK && error != 0)
++			return error;
++
++		rw_enter_read(&ac_taillock);
++		tail = TAILQ_LAST(&acct_list, acct_ccb_list);
++	}
++	printf("tail: %p, ac_seq %d\n", tail, tail->acc->ac_seq);
++
++	int sent = 0;
++	while (uio->uio_resid > 0) {
++		if (sent >= tail->acc->ac_len) 
++			break;
++		
++		v = tail->acc + sent;
++		len = tail->acc->ac_len - sent;
++
++		if (len > uio->uio_resid)
++			len = uio->uio_resid;
++		
++		if ((error = uiomove(v, len, uio)) != 0)
++			return (error);
++		sent += len;
++	}
++
++	free(tail->acc, M_DEVBUF, tail->acc->ac_len);
++	tail->acc = NULL;
++	TAILQ_REMOVE(&acct_list, tail, acct_nodes);
++	free(tail, M_DEVBUF, sizeof(struct acct_node));
++
++	rw_exit_read(&ac_taillock);
++
++	printf("acctread-exit\n");
++	return (0);
++}
++
++//static uint32_t ENA = (ACCT_ENA_FORK | ACCT_ENA_EXEC | ACCT_ENA_EXIT);
++
++static uint32_t F_ENA = (ACCT_ENA_OPEN | ACCT_ENA_CLOSE \
++		| ACCT_ENA_RENAME | ACCT_ENA_UNLINK);
++
++int
++acctioctl(dev_t dev, u_long cmd, caddr_t data, int flag, struct proc *proc)
++{
++	printf("acctioctl\n");
++	struct acct_ctl *ctl = (struct acct_ctl *)data;
++	struct trkvnode *node = NULL;
++	int error = 0;
++
++	switch (cmd) {
++	case FIONREAD:
++		break;
++	case FIONBIO:
++		break;
++	case ACCT_IOC_STATUS:
++		ctl->acct_ena = driver_ctl.acct_ena;
++		ctl->acct_fcount = driver_ctl.acct_fcount;
++		break;
++	case ACCT_IOC_FSTATUS:
++		node = trktree_pathlookup(proc, &f_tracker, ctl->acct_path);
++		if (node != NULL) {
++			ctl->acct_ena = node->trk_ena;
++			//ctl->acct_ena &= (driver_ctl.acct_ena | F_ENA);
++			ctl->acct_cond = node->trk_flags;
++		}
++		ctl->acct_fcount = driver_ctl.acct_fcount;
++		break;
++	case ACCT_IOC_ENABLE:
++		driver_ctl.acct_ena |= ctl->acct_ena;
++		ctl->acct_ena = driver_ctl.acct_ena;
++		break;
++	case ACCT_IOC_DISABLE:
++		if (ctl->acct_ena & ACCT_ENA_ALL) {
++			trktree_delete_vnodes(&f_tracker);
++		}
++		driver_ctl.acct_ena &= !ctl->acct_ena;
++		ctl->acct_ena = driver_ctl.acct_ena;
++		ctl->acct_fcount = driver_ctl.acct_fcount;
++		break;
++	case ACCT_IOC_TRACK_FILE:
++		node = trktree_add_path(proc,
++				&f_tracker, ctl->acct_path);
++		if (node != NULL) {
++			node->trk_ena |= (ctl->acct_ena & F_ENA);
++			node->trk_flags |= ctl->acct_cond;
++			ctl->acct_ena = node->trk_ena;
++			ctl->acct_cond = node->trk_flags;
++		} else {
++			ctl->acct_ena = 0;
++			ctl->acct_cond = 0;
++			error = ENOENT;
++		}
++		ctl->acct_fcount = driver_ctl.acct_fcount;
++		break;
++	case ACCT_IOC_UNTRACK_FILE:
++		ctl->acct_ena = driver_ctl.acct_ena;
++		node = trktree_pathremove(proc, &f_tracker, ctl->acct_path);
++		ctl->acct_fcount = driver_ctl.acct_fcount;
++		ctl->acct_cond = 0;
++		break;
++	default:
++		break;
++	}
++	return (error);
++}
++
++void
++acct_void(struct acct_common *ac_comm, unsigned short ac_type,
++		unsigned short ac_len, struct process *pr)
++{
++	struct timespec booted, elapsed, realstart, uptime;
++
++	ac_comm->ac_len = ac_len;
++	ac_comm->ac_type = ac_type;
++
++	/* (1) Name of process */
++	memcpy(ac_comm->ac_comm, pr->ps_comm, sizeof(char) * 16);
++
++	/* (3) The elapsed time the command ran (and its starting time) */
++	nanouptime(&uptime);
++	nanoboottime(&booted);
++	timespecadd(&booted, &pr->ps_start, &realstart);
++	memcpy(&(ac_comm->ac_btime), &realstart, sizeof(struct timespec));
++	timespecsub(&uptime, &pr->ps_start, &elapsed);
++	memcpy(&(ac_comm->ac_etime), &elapsed, sizeof(struct timespec));
++	
++	/* (6) The PID, UID and GID of the process */
++	ac_comm->ac_pid = pr->ps_pid;
++	ac_comm->ac_uid = pr->ps_ucred->cr_ruid;
++	ac_comm->ac_gid = pr->ps_ucred->cr_rgid;
++
++	/* (7) The terminal from which the process was started */
++	if ((pr->ps_flags & PS_CONTROLT) &&
++	    pr->ps_pgrp->pg_session->s_ttyp)
++		ac_comm->ac_tty = pr->ps_pgrp->pg_session->s_ttyp->t_dev;
++	else
++		ac_comm->ac_tty = NODEV;
++
++	/* (8) The boolean flags tell how process terminated or misbehaved. */
++	ac_comm->ac_flag = pr->ps_acflag;
++
++	return; 
++}
++
++static struct acct_node *
++make_node(void *ac_val)
++{
++	struct acct_node *node =
++		(struct acct_node *)malloc(sizeof(struct acct_node),
++				M_DEVBUF, M_WAITOK | M_ZERO);
++	node->acc = ac_val;
++
++	return (node);
++}
++
++static int
++update_seq(void)
++{
++	int ret = 0;
++	rw_enter_read(&ac_seqlock);
++	ret = ac_seq;
++	ac_seq += 1;
++	rw_exit_read(&ac_seqlock);
++
++	return ret;
++}
++
++static void
++add_node(struct acct_node *node)
++{
++	int wake_him = 0;
++	if (TAILQ_EMPTY(&acct_list))
++		wake_him = 1;
++	
++	rw_enter_read(&ac_taillock);
++	TAILQ_INSERT_HEAD(&acct_list, node, acct_nodes);
++	node->acc->ac_seq = update_seq();
++	printf("add_node seq: %d\n", node->acc->ac_seq);
++	rw_exit_read(&ac_taillock);
++
++	if (wake_him == 1) {
++		printf("i am waking him up\n");
++		wakeup(&identifier_sleep);
++	}
++	return;
++}
++
++void
++acct_fork(struct process *pr)
++{
++	if (!(driver_ctl.acct_ena & ACCT_ENA_FORK))
++		return;
++
++	struct acct_fork *ac_fork =
++		(struct acct_fork *)malloc(sizeof(struct acct_fork),
++				M_DEVBUF, M_WAITOK | M_ZERO);
++	if (ac_fork == NULL) {
++		update_seq();
++		return;
++	}
++
++	acct_void(&(ac_fork->ac_common),
++		ACCT_MSG_FORK, sizeof(struct acct_fork),
++		pr->ps_pptr);
++
++	ac_fork->ac_cpid = pr->ps_pid;
++
++	struct acct_node *node = make_node(ac_fork);
++
++	add_node(node);
++
++	return;
++}
++
++void
++acct_exec(struct process *pr)
++{
++	if (!(driver_ctl.acct_ena & ACCT_ENA_EXEC))
++		return;
++
++	struct acct_exec *ac_exec =
++		(struct acct_exec *)malloc(sizeof(struct acct_exec),
++				M_DEVBUF, M_WAITOK | M_ZERO);
++	if (ac_exec == NULL) {
++		update_seq();
++		return;
++	}
++
++	acct_void(&(ac_exec->ac_common),
++		ACCT_MSG_EXEC, sizeof(struct acct_exec),
++		pr);
++
++	struct acct_node *node = make_node(ac_exec);
++
++	add_node(node);
++
++	return;
++}
++
++void
++acct_exit(struct process *pr)
++{
++	if (!(driver_ctl.acct_ena & ACCT_ENA_EXIT))
++		return;
++
++	struct timespec st, tmp, ut;
++	struct rusage *r;
++	struct acct_exit *ac_exit =
++		(struct acct_exit *)malloc(sizeof(struct acct_exit),
++				M_DEVBUF, M_WAITOK | M_ZERO);
++	int t;
++	if (ac_exit == NULL) {
++		update_seq();
++		return;
++	}
++
++
++	acct_void(&(ac_exit->ac_common),
++		ACCT_MSG_EXIT, sizeof(struct acct_exit),
++		pr);
++
++	struct proc *p = pr->ps_mainproc;
++
++	/* (2) The amount of user and system time that was used */
++	calctsru(&pr->ps_tu, &ut, &st, NULL);
++	memcpy(&ac_exit->ac_utime, &ut, sizeof(struct timespec));
++	memcpy(&ac_exit->ac_stime, &st, sizeof(struct timespec));
++
++	/* (4) The average amount of memory used */
++	r = &p->p_ru;
++	timespecadd(&ut, &st, &tmp);
++	t = tmp.tv_sec * hz + tmp.tv_nsec / (1000 * tick);
++	if (t)
++		ac_exit->ac_mem =
++			(r->ru_ixrss + r->ru_idrss + r->ru_isrss) / t;
++	else
++		ac_exit->ac_mem = 0;
++
++	/* (5) The number of disk I/O operations done */
++	ac_exit->ac_io = r->ru_inblock + r->ru_oublock;
++
++	struct acct_node *node = make_node(ac_exit);
++
++	add_node(node);
++
++	return;
++}
++
++void
++acct_open(struct process *pr, struct vnode *vn, int i0, int i1)
++{
++//	printf("acct_open\n");
++
++	struct trkvnode *n = trktree_vnodelookup(&f_tracker, vn);
++
++	if (trktree_parsepermissions(n, ACCT_ENA_OPEN, (u_char)i0) != 0)
++		return;
++
++	struct acct_open *ac_open =
++		(struct acct_open *)malloc(sizeof(struct acct_open),
++				M_DEVBUF, M_WAITOK | M_ZERO);
++	if (ac_open == NULL) {
++		update_seq();
++		return;
++	}
++
++	acct_void(&(ac_open->ac_common),
++		ACCT_MSG_OPEN, sizeof(struct acct_open),
++		pr);
++
++	ac_open->ac_mode = i0;
++	ac_open->ac_errno = i1;
++	strlcpy(ac_open->ac_path, n->trk_name, PATH_MAX);
++
++	struct acct_node *node = make_node(ac_open);
++	add_node(node);
++	
++	printf("acct_open end\n");
++	return;
++}
++
++void
++acct_rename(struct process *pr, struct vnode *vn, const char *name, int e0)
++{
++	struct trkvnode *n = trktree_vnodelookup(&f_tracker, vn);
++
++	if (trktree_parsepermissions(n, ACCT_ENA_RENAME, 0) != 0) {
++		if (n != NULL)
++			trktree_vnoderemove(&f_tracker, n->trkvnode);		
++		return;
++	}
++	
++	struct acct_rename *ac_rename =
++		(struct acct_rename *)malloc(sizeof(struct acct_rename),
++				M_DEVBUF, M_WAITOK | M_ZERO);
++	if (ac_rename == NULL) {
++		update_seq();
++		return;
++	}
++
++	acct_void(&(ac_rename->ac_common),
++		ACCT_MSG_RENAME, sizeof(struct acct_rename),
++		pr);
++
++	strlcpy(ac_rename->ac_path, n->trk_name, PATH_MAX);
++	memcpy(ac_rename->ac_new, name, PATH_MAX);
++	ac_rename->ac_errno = e0;
++
++	struct acct_node *node = make_node(ac_rename);
++	add_node(node);
++
++	trktree_vnoderemove(&f_tracker, n->trkvnode);
++	printf("acct_rename end\n");
++	return;
++}
++void
++acct_unlink(struct process *pr, struct vnode *vn, int e0)
++{
++	struct trkvnode *n = trktree_vnodelookup(&f_tracker, vn);
++
++	if (trktree_parsepermissions(n, ACCT_ENA_UNLINK, 0) != 0) {
++		if (n != NULL)
++			trktree_vnoderemove(&f_tracker, n->trkvnode);
++		return;
++	}
++
++	struct acct_unlink *ac_unlink =
++		(struct acct_unlink *)malloc(sizeof(struct acct_unlink),
++				M_DEVBUF, M_WAITOK | M_ZERO);
++	if (ac_unlink == NULL) {
++		update_seq();
++		return;
++	}
++
++	acct_void(&(ac_unlink->ac_common),
++		ACCT_MSG_UNLINK, sizeof(struct acct_unlink),
++		pr);
++
++	strlcpy(ac_unlink->ac_path, n->trk_name, PATH_MAX);
++	ac_unlink->ac_errno = e0;
++
++	struct acct_node *node = make_node(ac_unlink);
++	add_node(node);
++
++	trktree_vnoderemove(&f_tracker, n->trkvnode);
++	printf("acct_unlink end\n");
++	return;
++}
++
++void
++acct_close(struct process *pr, struct vnode *vn)
++{
++	printf("acct_close\n");
++	struct trkvnode *n = trktree_vnodelookup(&f_tracker, vn);
++	if (trktree_parsepermissions(n, ACCT_ENA_CLOSE, 0) != 0)
++		return;
++
++	struct acct_close *ac_close =
++		(struct acct_close *)malloc(sizeof(struct acct_close),
++				M_DEVBUF, M_WAITOK | M_ZERO);
++	if (ac_close == NULL) {
++		update_seq();
++		return;
++	}
++
++	acct_void(&(ac_close->ac_common),
++		ACCT_MSG_CLOSE, sizeof(struct acct_close),
++		pr);
++
++	strlcpy(ac_close->ac_path, n->trk_name, PATH_MAX);
++
++	struct acct_node *node = make_node(ac_close);
++	add_node(node);
++
++	printf("acct_close end\n");
++	return;
++}
++
++int
++acctclose(dev_t dev, int flag, int mode, struct proc *p)
++{
++	printf("acctclose\n");
++	rw_enter_read(&ac_taillock);	
++	struct acct_node *np = NULL;
++	while ((np = TAILQ_FIRST(&acct_list))) {
++		free(np->acc, M_DEVBUF, np->acc->ac_len);
++		TAILQ_REMOVE(&acct_list, np, acct_nodes);
++		free(np, M_DEVBUF, sizeof(struct acct_node));
++	}
++	rw_exit_read(&ac_taillock);
++	ac_seq_reset();
++
++	printf("acctclose end\n");
++	return (0);
++}
++
++int
++acctkqfilter(dev_t dev, struct knote *p)
++{
++	return (EOPNOTSUPP);
++}
++
++int
++acctpoll(dev_t dev, int flag, struct proc *p)
++{
++	return (POLLERR);
++}
++
++/*
++ * Unsupported ioctl function.
++ */
++int
++acctwrite(dev_t dev, struct uio *uio, int i)
++{
++	return (EOPNOTSUPP);
++}
++
++static inline int
++trkvnode_compare(const struct trkvnode *n1, const struct trkvnode *n2)
++{
++//	printf("trkcompare %p %p\n", n1->trkvnode, n2->trkvnode);
++	return n1->trkvnode - n2->trkvnode;
++}
++
++struct trkvnode *
++trkvnode_new(struct vnode *vnode, char *path)
++{
++	if (vnode == NULL)
++		return NULL;
++
++	struct trkvnode *ret = malloc(sizeof(struct trkvnode),
++			M_DEVBUF, M_WAITOK|M_ZERO);
++	ret->trkvnode = vnode;
++	ret->trk_name = trk_path_copy(path);
++	return ret;
++}
++
++void
++trkvnode_delete(struct trkvnode *trk_vnode)
++{
++	if (trk_vnode == NULL)
++		return;
++
++	free(trk_vnode->trk_name, M_DEVBUF, sizeof(char) * PATH_MAX);
++	free(trk_vnode, M_DEVBUF, sizeof(struct trkvnode));
++}
++
++int
++trktree_delete_vnodes(struct trkvnode_rbt *trk)
++{
++	struct trkvnode *trkv, *next;
++	int ret = 0;
++
++	rw_enter_write(&ac_trklock);
++	RBT_FOREACH_SAFE(trkv, trkvnode_rbt, trk, next) {
++		//vrele(trkv->trkvnode);
++		RBT_REMOVE(trkvnode_rbt, trk, trkv);
++		trkvnode_delete(trkv);
++		ret++;
++	}
++	rw_exit_write(&ac_trklock);
++	printf("deleted %d names\n", ret);
++	return ret;
++}
++
++void
++trktree_destroy(struct trkvnode_rbt *trk)
++{
++	trktree_delete_vnodes(trk);
++	trk = NULL;
++}
++
++struct trkvnode *
++trktree_add_vnode_unlocked(struct trkvnode_rbt *trk,
++		struct vnode *trk_vnode, char *path)
++{
++	struct trkvnode *trkv, *old;
++
++	trkv = trkvnode_new(trk_vnode, path);
++	old = RBT_INSERT(trkvnode_rbt, trk, trkv);
++	if (old != NULL) {
++		/* Name already present. */
++		trkvnode_delete(trkv);
++		return old;
++	} else
++		(driver_ctl.acct_fcount)++;
++
++	printf("added vnode %p underneath tkr %p\n", trk_vnode, trk);
++	return trkv;
++}
++
++struct trkvnode *
++trktree_add_vnode(struct trkvnode_rbt *trk,
++		struct vnode *vnode, char *path)
++{
++	struct trkvnode *ret;
++
++	if (vnode == NULL)
++		return NULL;
++
++	rw_enter_write(&ac_trklock);
++	ret = trktree_add_vnode_unlocked(trk, vnode, path);
++	rw_exit_write(&ac_trklock);
++	return ret;
++}
++
++struct trkvnode *
++trktree_vnoderemove(struct trkvnode_rbt *trk, struct vnode *vnode)
++{
++	printf("trk_vnoderemove\n");
++	struct trkvnode trkv, *ret = NULL;
++
++	rw_enter_read(&ac_trklock);
++
++	printf("trk_vnoderemove: looking up vnode %p in tkr %p\n",
++	    vnode, trk);
++	trkv.trkvnode = vnode;
++	ret = RBT_FIND(trkvnode_rbt, trk, &trkv);
++	if (ret != NULL) {
++		ret = RBT_REMOVE(trkvnode_rbt, trk, ret);
++		trkvnode_delete(ret);
++		(driver_ctl.acct_fcount)--;
++	}
++	else
++		printf("did not find vnode\n");
++
++	rw_exit_read(&ac_trklock);
++
++	if (ret == NULL)
++		printf("trk_vnoderemove: no match for vnode %p in trk %p\n",
++		    vnode, trk);
++	else
++		printf("trk_vnoderemove: matched vnode %p in trk %p\n",
++		    vnode, trk);
++	printf("trk_vnoderemove exit %p\n", ret);
++	return ret;
++}
++
++struct trkvnode *
++trktree_vnodelookup(struct trkvnode_rbt *trk, struct vnode *vnode)
++{
++//	printf("trk_vnodelookup\n");
++
++	struct trkvnode trkv, *ret = NULL;
++
++	rw_enter_read(&ac_trklock);
++
++//	printf("trk_vnodelookup: looking up vnode %p in tkr %p\n",
++//	    vnode, trk);
++	trkv.trkvnode = vnode;
++	ret = RBT_FIND(trkvnode_rbt, trk, &trkv);
++
++	rw_exit_read(&ac_trklock);
++
++//	if (ret == NULL)
++//		printf("trk_vnodelookup: no match for vnode %p in trk %p\n",
++//		    vnode, trk);
++//	else
++//		printf("trk_vnodelookup: matched vnode %p in trk %p\n",
++//		    vnode, trk);
++	if (ret != NULL)
++		printf("trk_vnodelookup exit %p\n", ret);
++	return ret;
++}
++
++char *
++trk_path_copy(char *path)
++{
++	char *my_path = (char *)malloc(
++		sizeof(char) * PATH_MAX, M_DEVBUF, M_WAITOK | M_ZERO);
++
++	int cpd = strlcpy(my_path, path, 49);
++	if (cpd > 0)
++		printf("success cpd: %s, src: %s\n", my_path, path);
++	else
++		printf("fail cpd: %s, src: %s\n", my_path, path);
++
++	return my_path;
++}
++
++struct vnode *
++path_to_vnode(struct proc *p, char *path)
++{
++	struct nameidata nd = {0};
++	char *my_path = trk_path_copy(path);
++
++	NDINIT(&nd, LOOKUP,FOLLOW|LOCKLEAF|LOCKPARENT,
++			UIO_SYSSPACE, my_path, p);
++
++	int error = namei(&nd);
++	if (error == 0 && nd.ni_dvp != NULL)
++		vput(nd.ni_dvp);
++	if (error == 0 && nd.ni_vp != NULL)
++		vput(nd.ni_vp);
++
++	free(my_path, M_DEVBUF, sizeof(char) * PATH_MAX);
++	return error == 0 ? nd.ni_vp : NULL;
++}
++
++struct trkvnode *
++trktree_pathremove(struct proc *p, struct trkvnode_rbt *trk, char *path)
++{
++	printf("trktree_pathremove\n");
++	struct vnode *v = path_to_vnode(p, path);
++	struct trkvnode *ret = NULL;
++	
++	if (v == NULL)
++		return NULL;
++
++	ret = trktree_vnoderemove(trk, v);
++
++	printf("trktree_path exit %p vnode:%p\n", ret, v);
++//	if (v != NULL)
++//		vput(v);
++	return ret;
++}
++
++struct trkvnode *
++trktree_pathlookup(struct proc *p, struct trkvnode_rbt *trk, char *path)
++{
++	printf("trktree_path\n");
++	struct vnode *v = path_to_vnode(p, path);
++	struct trkvnode *ret = NULL;
++
++	if (v == NULL)
++		return NULL;
++
++	ret = trktree_vnodelookup(trk, v);
++
++	printf("trktree_path exit %p vnode:%p\n", ret, v);
++//	if (v != NULL)
++//		vput(v);
++	return ret;
++}
++
++struct trkvnode *
++trktree_add_path(struct proc *p,
++		struct trkvnode_rbt *trk, char *path)
++{
++	printf("trk_add_path\n");
++	struct trkvnode *ret;
++	struct vnode *v = path_to_vnode(p, path);
++
++	ret = trktree_add_vnode(trk, v, path);
++
++	printf("added path %s beneath %p vnode %p,",
++	    path, trk, v);
++
++	printf("trk_add_path exit\n");
++	return ret;
++}
++
++int
++trktree_parsepermissions(struct trkvnode *n, u_char ena, u_char flags)
++{
++	if (n == NULL)
++		return 1;
++	printf("driverctl.ena %d trk_ena %dtrk_con %d\nena %d, flags %d\n",
++			driver_ctl.acct_ena,
++			n->trk_ena, n->trk_flags, ena, flags);
++
++	if (flags == 0)
++		flags = n->trk_flags;
++
++	if ((driver_ctl.acct_ena & ena) && (n->trk_ena & ena) && \
++		((flags == 0) || (n->trk_flags & flags)))
++		return 0;
++
++	return 2;
++}
+Index: sys/dev/acct.h
+===================================================================
+RCS file: sys/dev/acct.h
+diff -N sys/dev/acct.h
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ sys/dev/acct.h	24 Sep 2021 04:04:26 -0000
+@@ -0,0 +1,217 @@
++/*	$OpenBSD$ */
++
++/*
++ * Copyright (c) 2021 The University of Queensland
++ *
++ * Permission to use, copy, modify, and distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++#include <sys/types.h>
++#include <sys/syslimits.h>
++#include <sys/ioccom.h>
++
++#ifndef __DEV_ACCT_H__
++#define __DEV_ACCT_H__
++
++#define ACCT_MSG_FORK	0
++#define ACCT_MSG_EXEC	1
++#define ACCT_MSG_EXIT	2
++#define	ACCT_MSG_OPEN	3
++#define	ACCT_MSG_RENAME	4
++#define	ACCT_MSG_UNLINK	5
++#define	ACCT_MSG_CLOSE	6
++
++struct acct_common {
++	unsigned short		ac_type;
++	unsigned short		ac_len;
++	unsigned int		ac_seq;
++
++	char			ac_comm[16];	/* command name */
++	struct timespec		ac_etime;	/* elapsed time */
++	struct timespec		ac_btime;	/* starting time */
++	pid_t			ac_pid;		/* process id */
++	uid_t			ac_uid;		/* user id */
++	gid_t			ac_gid;		/* group id */
++	dev_t			ac_tty;		/* controlling tty */
++	unsigned int		ac_flag;	/* accounting flags */
++};
++
++/*
++ * fork info is mostly from the parent, but acct_fork gets passed the child.
++ */
++struct acct_fork {
++	struct acct_common	ac_common;
++	pid_t			ac_cpid;	/* child pid */
++};
++
++/*
++ * exec exists mostly to show the new command name.
++ */
++struct acct_exec {
++	struct acct_common	ac_common;
++};
++
++/*
++ * basically a clone of the ACCOUNTING syscall
++ */
++struct acct_exit {
++	struct acct_common	ac_common;
++	struct timespec		ac_utime;	/* user time */
++	struct timespec		ac_stime;	/* system time */
++	uint64_t		ac_mem;		/* average memory usage */
++	uint64_t		ac_io;		/* count of IO blocks */
++};
++
++/*
++ * generated when a process opens a marked file
++ */
++struct acct_open {
++	struct acct_common	ac_common;
++	char			ac_path[PATH_MAX];
++	int			ac_mode;	/* O_RDONLY | O_WRONLY */
++	int			ac_errno;	/* 0 = success */
++};
++
++struct acct_rename {
++	struct acct_common	ac_common;
++	char			ac_path[PATH_MAX];
++	char			ac_new[PATH_MAX];
++	int			ac_errno;
++};
++
++struct acct_unlink {
++	struct acct_common	ac_common;
++	char			ac_path[PATH_MAX];
++	int			ac_errno;
++};
++
++struct acct_close {
++	struct acct_common	ac_common;
++	char			ac_path[PATH_MAX];
++};
++
++
++#define	ACCT_ENA_FORK		(1 << 0)
++#define	ACCT_ENA_EXEC		(1 << 1)
++#define	ACCT_ENA_EXIT		(1 << 2)
++#define	ACCT_ENA_OPEN		(1 << 3)
++#define	ACCT_ENA_CLOSE		(1 << 4)
++#define	ACCT_ENA_RENAME		(1 << 5)
++#define	ACCT_ENA_UNLINK		(1 << 6)
++#define	ACCT_ENA_ALL		ACCT_ENA_FORK | \
++				ACCT_ENA_EXEC | \
++				ACCT_ENA_EXIT | \
++				ACCT_ENA_OPEN | \
++				ACCT_ENA_CLOSE | \
++				ACCT_ENA_RENAME | \
++				ACCT_ENA_UNLINK
++
++#define	ACCT_COND_READ		(1 << 0)
++#define	ACCT_COND_WRITE		(1 << 1)
++#define	ACCT_COND_SUCCESS	(1 << 2)
++#define	ACCT_COND_FAILURE	(1 << 3)
++#define	ACCT_COND_ALL		ACCT_COND_READ | \
++				ACCT_COND_WRITE | \
++				ACCT_COND_SUCCESS | \
++				ACCT_COND_FAILURE
++
++/*
++ * Common structure for all of the acct ioctls.
++ */
++struct acct_ctl {
++	uint32_t		acct_ena;		/* ACCT_ENA_* */
++	uint32_t		acct_cond;		/* ACCT_COND_* */
++	uint64_t		acct_fcount;		/* count of files */
++	char			acct_path[PATH_MAX];
++};
++
++/*
++ * Gets the global enabled auditing features.
++ *
++ * Output fields: acct_ena, acct_fcount
++ */
++#define	ACCT_IOC_STATUS		_IOR('j', 1, struct acct_ctl)
++
++/*
++ * Gets the set of enabled events and conditions applied to a particular
++ * file (if any). Returns ENOENT if the file is not being tracked.
++ *
++ * Input fields: acct_path
++ * Output fields: acct_ena, acct_cond
++ */
++#define	ACCT_IOC_FSTATUS	_IOWR('j', 2, struct acct_ctl)
++
++/*
++ * Enables audit features globally.
++ *
++ * Input fields: acct_ena (just the features to enable)
++ * Output fields: acct_ena (all currently enabled features after applying)
++ */
++#define	ACCT_IOC_ENABLE		_IOWR('j', 3, struct acct_ctl)
++
++/*
++ * Disables audit features globally.
++ *
++ * Input fields: acct_ena (just the features to disable)
++ * Output fields: acct_ena (all currently enabled features after applying)
++ */
++#define	ACCT_IOC_DISABLE	_IOWR('j', 4, struct acct_ctl)
++
++/*
++ * Starts tracking a file and generating audit events about it. The file must
++ * exist at the specified path when this ioctl is called (if it doesn't, it
++ * returns ENOENT).
++ *
++ * If the file specified is already being tracked, will add to the existing
++ * events/conditions. Returns the final set of events/conditions for this file
++ * in the struct.
++ *
++ * Input fields: acct_ena, acct_cond, acct_path
++ * Output fields: acct_ena, acct_cond
++ */
++#define	ACCT_IOC_TRACK_FILE	_IOWR('j', 5, struct acct_ctl)
++
++/*
++ * Stops tracking a file for audit. The file must exist at the specified path.
++ *
++ * Removes all of the events and conditions specified from the tracking entry
++ * for the file. If no events/conditions are left, the tracking should be
++ * stopped altogether (and 0 returned in both acct_ena and acct_cond).
++ * Otherwise, any remaining events/conditions should be returned.
++ *
++ * Use ACCT_ENA_ALL/ACCT_COND_ALL if you need to completely stop tracking of
++ * a file.
++ *
++ * Input fields: acct_ena, acct_cond, acct_path
++ * Output fields: acct_ena, acct_cond
++ */
++#define	ACCT_IOC_UNTRACK_FILE	_IOWR('j', 6, struct acct_ctl)
++
++
++
++#ifdef _KERNEL
++
++/* Process accounting hooks: leave these alone. */
++void	acct_fork(struct process *);
++void	acct_exec(struct process *);
++void	acct_exit(struct process *);
++
++/* File accounting hooks: you can change these if you want to. */
++void	acct_open(struct process *, struct vnode *, int, int);
++void	acct_rename(struct process *, struct vnode *, const char *, int);
++void	acct_unlink(struct process *, struct vnode *, int);
++void	acct_close(struct process *, struct vnode *);
++
++#endif /* _KERNEL */
++
++#endif /* __DEV_ACCT_H__ */
+Index: sys/kern/kern_descrip.c
+===================================================================
+RCS file: /cvs/src/sys/kern/kern_descrip.c,v
+retrieving revision 1.202
+diff -u -p -u -p -r1.202 kern_descrip.c
+--- sys/kern/kern_descrip.c	11 Jun 2020 13:23:18 -0000	1.202
++++ sys/kern/kern_descrip.c	24 Sep 2021 04:04:29 -0000
+@@ -64,6 +64,11 @@
+ 
+ #include <sys/pipe.h>
+ 
++#include "acct.h"
++#if NACCT > 0
++#include <dev/acct.h>
++#endif
++
+ /*
+  * Descriptor management.
+  *
+@@ -1258,6 +1263,10 @@ closef(struct file *fp, struct proc *p)
+ 		lf.l_len = 0;
+ 		lf.l_type = F_UNLCK;
+ 		(void) VOP_ADVLOCK(vp, fdp, F_UNLCK, &lf, F_POSIX);
++		printf("above act_close\n");
++#if NACCT > 0
++		acct_close(p->p_p, vp);
++#endif
+ 	}
+ 
+ 	return (FRELE(fp, p));
+Index: sys/kern/kern_exec.c
+===================================================================
+RCS file: /cvs/src/sys/kern/kern_exec.c,v
+retrieving revision 1.223
+diff -u -p -u -p -r1.223 kern_exec.c
+--- sys/kern/kern_exec.c	16 Mar 2021 16:32:22 -0000	1.223
++++ sys/kern/kern_exec.c	24 Sep 2021 04:04:29 -0000
+@@ -69,6 +69,11 @@
+ struct uvm_object *timekeep_object;
+ struct timekeep *timekeep;
+ 
++#include "acct.h"
++#if NACCT > 0
++#include <dev/acct.h>
++#endif
++
+ void	unveil_destroy(struct process *ps);
+ 
+ const struct kmem_va_mode kv_exec = {
+@@ -676,6 +681,10 @@ sys_execve(struct proc *p, void *v, regi
+ 	/* map the process's timekeep page, needs to be before e_fixup */
+ 	if (exec_timekeep_map(pr))
+ 		goto free_pack_abort;
++
++#if NACCT > 0
++	acct_exec(pr);
++#endif
+ 
+ 	/* setup new registers and do misc. setup. */
+ 	if (pack.ep_emul->e_fixup != NULL) {
+Index: sys/kern/kern_exit.c
+===================================================================
+RCS file: /cvs/src/sys/kern/kern_exit.c,v
+retrieving revision 1.199
+diff -u -p -u -p -r1.199 kern_exit.c
+--- sys/kern/kern_exit.c	12 Mar 2021 10:13:28 -0000	1.199
++++ sys/kern/kern_exit.c	24 Sep 2021 04:04:29 -0000
+@@ -70,6 +70,11 @@
+ 
+ #include <uvm/uvm_extern.h>
+ 
++#include "acct.h"
++#if NACCT > 0
++#include <dev/acct.h>
++#endif
++
+ #include "kcov.h"
+ #if NKCOV > 0
+ #include <sys/kcov.h>
+@@ -206,6 +211,9 @@ exit1(struct proc *p, int xexit, int xsi
+ 		semexit(pr);
+ #endif
+ 		killjobc(pr);
++#if NACCT > 0
++		acct_exit(pr);
++#endif
+ #ifdef ACCOUNTING
+ 		acct_process(p);
+ #endif
+Index: sys/kern/kern_fork.c
+===================================================================
+RCS file: /cvs/src/sys/kern/kern_fork.c,v
+retrieving revision 1.236
+diff -u -p -u -p -r1.236 kern_fork.c
+--- sys/kern/kern_fork.c	19 Jun 2021 02:05:33 -0000	1.236
++++ sys/kern/kern_fork.c	24 Sep 2021 04:04:29 -0000
+@@ -65,6 +65,13 @@
+ #include <uvm/uvm.h>
+ #include <machine/tcb.h>
+ 
++#include "kcov.h"
++
++#include "acct.h"
++#if NACCT > 0
++#include <dev/acct.h>
++#endif
++
+ int	nprocesses = 1;		/* process 0 */
+ int	nthreads = 1;		/* proc 0 */
+ int	randompid;		/* when set to 1, pid's go random */
+@@ -469,6 +476,10 @@ fork1(struct proc *curp, int flags, void
+ 	 * Notify any interested parties about the new process.
+ 	 */
+ 	KNOTE(&curpr->ps_klist, NOTE_FORK | pr->ps_pid);
++
++#if NACCT > 0
++	acct_fork(pr);
++#endif
+ 
+ 	/*
+ 	 * Update stats now that we know the fork was successful.
+Index: sys/kern/vfs_syscalls.c
+===================================================================
+RCS file: /cvs/src/sys/kern/vfs_syscalls.c,v
+retrieving revision 1.352
+diff -u -p -u -p -r1.352 vfs_syscalls.c
+--- sys/kern/vfs_syscalls.c	16 Jul 2021 07:59:38 -0000	1.352
++++ sys/kern/vfs_syscalls.c	24 Sep 2021 04:04:30 -0000
+@@ -63,6 +63,11 @@
+ 
+ #include <sys/syscallargs.h>
+ 
++#include "acct.h"
++#if NACCT > 0
++#include <dev/acct.h>
++#endif
++
+ extern int suid_clear;
+ 
+ static int change_dir(struct nameidata *, struct proc *);
+@@ -1200,6 +1205,9 @@ doopenat(struct proc *p, int fd, const c
+ 			return (error);
+ 		}
+ 	}
++#if NACCT > 0
++	acct_open(p->p_p, vp, oflags, mode);
++#endif
+ 	VOP_UNLOCK(vp);
+ 	*retval = indx;
+ 	fdplock(fdp);
+@@ -1897,6 +1905,9 @@ out:
+ 			vput(nd.ni_dvp);
+ 		vput(vp);
+ 	}
++#if NACCT > 0
++	acct_unlink(p->p_p, vp, error);
++#endif
+ 	return (error);
+ }
+ 
+@@ -2983,6 +2994,10 @@ dorenameat(struct proc *p, int fromfd, c
+ 	 */
+ 	if (fvp == tvp)
+ 		error = -1;
++#if NACCT > 0
++	acct_rename(p->p_p, fvp, to, error);
++#endif
++
+ out:
+ 	if (!error) {
+ 		if (tvp) {
+Index: sys/sys/conf.h
+===================================================================
+RCS file: /cvs/src/sys/sys/conf.h,v
+retrieving revision 1.156
+diff -u -p -u -p -r1.156 conf.h
+--- sys/sys/conf.h	23 Jan 2021 05:08:36 -0000	1.156
++++ sys/sys/conf.h	24 Sep 2021 04:04:30 -0000
+@@ -504,6 +504,13 @@ extern struct cdevsw cdevsw[];
+ 	(dev_type_stop((*))) enodev, 0, selfalse, \
+ 	(dev_type_mmap((*))) enodev, 0, D_CLONE }
+ 
++/* open, close, read, write, ioctl, poll, kqfilter */
++#define cdev_acct_init(c,n) { \
++	dev_init(c,n,open), dev_init(c,n,close), dev_init(c,n,read), \
++	dev_init(c,n,write), dev_init(c,n,ioctl), \
++	(dev_type_stop((*))) enodev, 0, dev_init(c,n,poll), \
++	(dev_type_mmap((*))) enodev, 0, 0, dev_init(c,n,kqfilter) }
++
+ #endif
+ 
+ /*
+@@ -643,6 +650,7 @@ cdev_decl(fuse);
+ cdev_decl(pvbus);
+ cdev_decl(ipmi);
+ cdev_decl(kcov);
++cdev_decl(acct);
+ 
+ #endif
+ 
