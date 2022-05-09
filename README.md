@@ -22,6 +22,10 @@
 
 3. https://wiki.sei.cmu.edu/confluence/display/c/Introduction
 
+## Assembly
+
+1. https://diveintosystems.org/
+
 ## Misc.
 
 1. https://en.cppreference.com/w/c/preprocessor/impl
