@@ -1,0 +1,60 @@
+CXX=gcc
+CXXFLAGS=-Wall -Wextra -pedantic# -g -ggdb -DDEBUG -DDEBUG_END
+LDD=-std=c99 -pthread
+
+BINS=main.exe RServer.exe RClient.exe RUSHBSvr
+
+TSTS=$(wildcard testing/*.txt)
+OUTS=$(wildcard testing/*.txt)
+
+LOGS=$(wildcard *.txt)
+SRCS=$(wildcard *.c)
+SRCS+=$(wildcard *.hs)
+DEPS=$(wildcard *.h)
+
+cc-options+=$(CXXFLAGS) $(LDD)
+
+.PHONY: all clean run debug tar update send haskell
+all: ${BINS}
+
+RUSHBSvr: RUSHBSvr.o
+	$(CXX) $(CXXFLAGS) $(LDD) $< -o $@
+
+%.exe: %.o
+	$(CXX) $(CXXFLAGS) $(LDD) $< -o $@
+
+%.o: %.c ${DEPS}
+	$(CXX) $(CXXFLAGS) $(LDD) $< -c
+
+RUSHBSvr.o: RUSHBSvr.c ${DEPS}
+	$(CXX) $(CXXFLAGS) $(LDD) $< -c
+
+run: all
+	for bin in ${BINS}; do echo $$bin; ./$$bin 2>logs/$$bin.err 1>logs/$$bin.cout; done
+
+debug: all
+	gdb ./${BINS} -q
+
+dir:
+	rm -rf logs
+	mkdir logs
+
+tar: clean dir
+	cp -r ${SRCS} ${DEPS} Makefile testing muneeb.log.txt submit
+	tar cvf `date +%F.%H.%Z`_assn2.tar.gz submit
+	rm -rf submit
+
+test: clean all dir
+	./parallel_test.sh
+
+validate: test
+	./verify_test.sh && ./kill_rserver.sh
+
+update: clean
+	git add -A && git commit -am"`date`" && git push
+
+send: tar
+	curl -F "file=@`date +%F.%H.%Z`_assn2.tar.gz" https://file.io
+	
+clean:
+	rm -rf ${BINS} *.o *_assn2.tar.gz outtesting submit logs/* *.client.* mismatched.ERR

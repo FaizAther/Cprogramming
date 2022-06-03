@@ -1,0 +1,6 @@
+make --dry-run --always-make --keep-going --print-directory
+make: Entering directory '/home/debian/School/personal/Just-C'
+make: Leaving directory '/home/debian/School/personal/Just-C'
+ 
+make: *** No targets specified and no makefile found.  Stop.
+
