@@ -1,6 +1,11 @@
 #ifndef __RPROCESS__H__
 #define __RPROCESS__H__
 
+/*
+ * ather
+ * The University of Queensland, 2022
+ */
+
 #include <sys/stat.h>
 
 #include "RHdr.h"

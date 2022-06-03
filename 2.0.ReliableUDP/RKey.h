@@ -1,6 +1,11 @@
 #ifndef __RKEY__H__
 #define __RKEY__H__
 
+/*
+ * ather
+ * The University of Queensland, 2022
+ */
+
 const uint64_t N = 249;
 
 const uint64_t D = 15;

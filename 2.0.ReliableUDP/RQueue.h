@@ -1,6 +1,11 @@
 #ifndef __RQUEUE__H__
 #define __RQUEUE__H__
 
+/*
+ * ather
+ * The University of Queensland, 2022
+ */
+
 #include <stdlib.h>
 #include <sys/queue.h>
 

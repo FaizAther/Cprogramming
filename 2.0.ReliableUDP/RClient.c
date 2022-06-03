@@ -1,6 +1,11 @@
 #define POSIX_C_SOURCE >= 200112L
 #define _POSIX_C_SOURCE
 
+/*
+ * ather
+ * The University of Queensland, 2022
+ */
+
 #define _GNU_SOURCE
 
 #include <sys/types.h>

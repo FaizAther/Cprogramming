@@ -1,6 +1,11 @@
 #ifndef __RHANDLESERV__H__
 #define __RHANDLESERV__H__
 
+/*
+ * ather
+ * The University of Queensland, 2022
+ */
+
 #include <bsd/sys/tree.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>

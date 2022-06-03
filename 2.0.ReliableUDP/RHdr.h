@@ -1,6 +1,11 @@
 #ifndef __RHDR__H__
 #define __RHDR__H__
 
+/*
+ * ather
+ * The University of Queensland, 2022
+ */
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>

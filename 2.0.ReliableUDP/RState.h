@@ -1,6 +1,11 @@
 #ifndef __RSTATE__H__
 #define __RSTATE__H__
 
+/*
+ * ather
+ * The University of Queensland, 2022
+ */
+
 #include "RQueue.h"
 
 #define NSTATES 2U
