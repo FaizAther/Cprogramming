@@ -1,0 +1,206 @@
+#ifndef __RSRVUDP_H__
+#define __RSRVUDP_H__
+
+/*
+	ather
+	coms3200, The University of Queensland 2022
+*/
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <poll.h>
+#include <sys/time.h>
+
+#include "RSockCom.h"
+#include "RIPop.h"
+#include "RSPkt.h"
+#include "RDatPkt.h"
+#include "RGreet.h"
+#include "RUdp.h"
+#include "RStr.h"
+
+typedef struct RAdaptor_t {
+	struct sockaddr_in addr;
+	socklen_t addr_len;
+	RIPsingle_t ip_box;
+	char ip_name[IP_MAX_NAME];
+	char buf[RSOCK_BUF_MAX_SZ];
+	RStr_lst_t mailbox;
+	time_t query;
+	struct RAdaptor_t *next;
+} RAdaptor_t;
+typedef RAdaptor_t *RAdaptor;
+
+typedef struct RSrvUdp_t {
+	RIPop_t ip_op;
+	struct RAdaptor_t *head;
+	struct RAdaptor_t *tail;
+	uint64_t adaptor_n;
+	char name[IP_MAX_NAME];
+	RUdp ubox;
+} RSrvUdp_t;
+typedef RSrvUdp_t *RSrvUdp;
+
+bool
+rSrvUdp_adaptor_append(RSrvUdp sup, RSock client)
+{
+	RAdaptor adaptor = (RAdaptor)malloc(sizeof(RAdaptor_t));
+	memset(adaptor, 0, sizeof(RAdaptor_t));
+	rIpop_assign_ip(&sup->ip_op, &adaptor->ip_box, true);
+	client->addr_sz = sizeof(struct sockaddr_in);
+	memcpy(&adaptor->addr, &client->addr, client->addr_sz);
+	memcpy(adaptor->buf, client->buf, RSOCK_BUF_MAX_SZ);
+
+	rIpop_op_to_str(&adaptor->ip_box, adaptor->ip_name);
+
+	if (sup->head) {
+		sup->tail->next = adaptor;
+		sup->tail = adaptor;
+	} else {
+		sup->tail = sup->head = adaptor;
+	}
+	sup->adaptor_n += 1;
+	return true;
+}
+
+static RAdaptor
+rsSvrUdp_find_adaptor_ip(RAdaptor head, uint32_t find_ip)
+{
+	char dest_ip[IP_MAX_NAME];
+	rsPkt_ip_op_take(&find_ip, dest_ip);
+	fprintf(stderr, "SEND TO %s\n", dest_ip);
+
+	for (RAdaptor curr = head; curr != NULL; curr = curr->next) {
+		if (strncmp(curr->ip_name, dest_ip, IP_MAX_NAME) == 0) {
+			fprintf(stderr, "FOUND %s\n", dest_ip);
+			return curr;
+		}
+	}
+	return NULL;
+}
+
+void
+rsSrvUdp_fragment(RStr_lst head, RStr buf, RSPkt stamp)
+{
+	fprintf(stderr, "ERR: %s\n", __func__);
+	RStr_lst_buf_add(head, buf->buf_extra + sizeof(RSPkt_t), buf->buf_extra_sz - sizeof(RSPkt_t), (char *)stamp, sizeof(RSPkt_t), UDP_BUF_MAX_SZ);
+	RStr_show(head->head, true);
+}
+
+static void
+rsSvrRSockClone(RSock client_send, struct sockaddr_in *addr)
+{
+	memcpy(&client_send->addr, addr, sizeof(struct sockaddr_in));
+	memcpy(&client_send->junk, addr, sizeof(struct sockaddr_in));
+	client_send->addr_sz = sizeof(struct sockaddr_in);
+	client_send->junk_sz = sizeof(struct sockaddr_in);
+}
+
+bool
+rsSvrUdp_handle(RSrvUdp sup, RSock client)
+{
+	fprintf(stderr, "ERR: %s\n", __func__);
+	RSPkt pkt = (RSPkt)client->buf;
+	if (client->excess.excess_on) { pkt = (RSPkt)client->excess.buf_extra; }
+	if (RSPKT_MODE_CHK(pkt, RS_DISCOVERY)) {
+		fprintf(stderr, "DISCOVER\n");
+		RIPsingle_t assign;
+		char assign_ip[IP_MAX_NAME];
+		rIpop_assign_ip(&sup->ip_op, &assign, false);
+		rIpop_op_to_str(&assign, assign_ip);
+		RGreet_t greet_pkt;
+		RGREET_INIT(&greet_pkt);
+		rGreet_set_assign_ip(&greet_pkt, assign_ip);
+		rsPkt_set_src_ip((RSPkt)&greet_pkt, sup->ubox->ubox.host);
+		RSPKT_MODE_SET((RSPkt)&greet_pkt, RS_OFFER);
+		memcpy(pkt, &greet_pkt, sizeof(RGreet_t));
+		fprintf(stderr, "SENDING THIS\n");
+		rGreet_show((RGreet)pkt, stderr);
+		rUdp_write(sup->ubox, client);
+		pkt->dest_ip = greet_pkt.assign_ip;
+		rSrvUdp_adaptor_append(sup, client);
+	} else if (RSPKT_MODE_CHK(pkt, RS_REQUEST)) {
+		RAdaptor dest_adaptor = rsSvrUdp_find_adaptor_ip(sup->head, ((RGreet)pkt)->assign_ip);
+		if (dest_adaptor == NULL) { return false; }
+		RGreet greet_pkt = (RGreet)dest_adaptor->buf;
+		greet_pkt->rs_pkt.dest_ip = greet_pkt->assign_ip;
+		RSPKT_MODE_SET((RSPkt)&greet_pkt, RS_ACKNOWLEDGE);
+		memcpy(pkt, greet_pkt, sizeof(RGreet_t));
+		fprintf(stderr, "SENDING THIS\n");
+		rGreet_show((RGreet)pkt, stderr);
+		rUdp_write(sup->ubox, client);
+		return true;
+	} else if (RSPKT_MODE_CHK(pkt, RS_DATA_PAYLOAD)) {
+		rsPkt_show(pkt, stderr);
+		RAdaptor dest_adaptor = rsSvrUdp_find_adaptor_ip(sup->head, pkt->dest_ip);
+		if (dest_adaptor == NULL) { return false; }
+		RSock_t client_send;
+		memset(&client_send, 0, sizeof(RSock_t));
+		rsSvrRSockClone(&client_send, &dest_adaptor->addr);
+		RData_t dat_pkt;
+		RDATA_INIT(&dat_pkt);
+		dat_pkt.rs_pkt.src_ip = pkt->src_ip;
+		dat_pkt.rs_pkt.dest_ip = pkt->dest_ip;
+		if (client->excess.excess_on) { rsSrvUdp_fragment(&dest_adaptor->mailbox, &client->excess, (RSPkt)&dat_pkt); }
+		else {
+			memcpy(dat_pkt.payload, (client->buf + sizeof(RSPkt_t)), UDP_MAX_PKT - sizeof(RSPkt_t));
+			RStr_lst_buf_add(&dest_adaptor->mailbox, (char *)&dat_pkt, sizeof(RData_t), 0, 0, UDP_BUF_MAX_SZ);
+		}
+		RSPkt_t craft;
+		RSPKT_INIT(&craft);
+		rsPkt_set_src_ip(&craft, sup->name);
+		craft.dest_ip = pkt->dest_ip;
+		RSPKT_MODE_SET(&craft, RS_QUERY_PACKET);
+		memcpy(client_send.buf, &craft, sizeof(RSPkt_t));
+		rsPkt_show(&craft, stderr);
+		rUdp_write(sup->ubox, &client_send);
+		rData_show(&dat_pkt, stderr);
+	} else if (RSPKT_MODE_CHK(pkt, RS_QUERY_ACCEPT)) {
+		rsPkt_show(pkt, stderr);
+		RAdaptor dest_adaptor = rsSvrUdp_find_adaptor_ip(sup->head, pkt->src_ip);
+		if (dest_adaptor == NULL) { return false; }
+		RSock_t client_send;
+		memset(&client_send, 0, sizeof(RSock_t));
+		rsSvrRSockClone(&client_send, &dest_adaptor->addr);
+		RStr curr = dest_adaptor->mailbox.head;
+		do {
+			memcpy(client_send.buf, curr->buf_extra, sizeof(RData_t));
+			rData_show((RData)client_send.buf, stderr);
+			rUdp_write(sup->ubox, &client_send);
+			curr = curr->next;
+		} while (curr != NULL);
+		RStr_destroy(dest_adaptor->mailbox.head, true);
+		memset(&dest_adaptor->mailbox, 0, sizeof(RStr_lst_t));
+		return true;
+  } else {
+		fprintf(stderr, "ERR: Not implemented");
+  }
+	return false;
+}
+
+static bool
+rSvrUdp_init(RSrvUdp sup, char *name, int subnet)
+{
+	if (name == NULL || subnet < 0 || subnet > IP_MAX_SPACE) { return false; }
+	uint8_t name_sz;
+	memset(sup, 0, sizeof(struct RSrvUdp_t));
+	RIPOP_INIT(&sup->ip_op);
+	if (!rIpop_str_validate_good(name, &name_sz)) { return false; }
+	memcpy(sup->name, name, name_sz);
+	rIpop_str_to_op(&sup->ip_op, sup->name);
+	rIpop_justify(&sup->ip_op, subnet);
+	rIpop_show(&sup->ip_op, stderr);
+	return true;
+}
+
+static void
+rSrvUdp_whitetest(void)
+{
+	fprintf(stderr, "%s\n", __func__);
+	RSrvUdp_t sut;
+	RSrvUdp sup = &sut;
+	if (!rSvrUdp_init(sup, RIP_DEFAULT_IP_CHECK, RIP_DEFAULT_SUBNET_CHECK)) { exit(EXIT_FAILURE); }
+}
+
+#endif //__RSRVUDP_H__
