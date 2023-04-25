@@ -1,0 +1,3 @@
+[submodule "D.asm/xorpd/asm_prog_ex_yasm"]
+	path = D.asm/xorpd/asm_prog_ex_yasm
+	url = https://github.com/xorpd/asm_prog_ex_yasm
