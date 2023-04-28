@@ -14,6 +14,8 @@
 
 3. http://www.unknownroad.com/rtfm/gdbtut/gdbtoc.html
 
+4. Greg Law: https://www.youtube.com/watch?v=l3h7F9za_pc
+
 ## Coding practices
 
 1. https://en.wikipedia.org/wiki/CERT_Coding_Standards
@@ -25,6 +27,12 @@
 ## Assembly
 
 1. https://diveintosystems.org/
+
+2. https://www.xorpd.net/
+
+## C
+
+1. https://beej.us/guide/bgc/html/split/chapter-atomics.html
 
 ## Misc.
 
