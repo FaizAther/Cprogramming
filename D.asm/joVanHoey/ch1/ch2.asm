@@ -18,7 +18,6 @@ section .text
   global main
 
 main:
-  mov rbp, rsp; for correct debugging
   push rbp              ; prologue (save base pointer)
   mov rbp, rsp          ; prologue (repleace base pointer with current stack pointer)
 

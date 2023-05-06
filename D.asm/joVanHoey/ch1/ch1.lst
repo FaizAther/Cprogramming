@@ -1,59 +1,20 @@
-     1                                  ; ch2.asm
-     2                                  
-     3                                  section .data
-     4 00000000 4A656C6C6F2C20576F-       msg db "Jello, World", 10, 0
-     4 00000009 726C640A00         
-     5                                    msg_len equ $-msg-1
-     6 0000000E 416C697665206E206B-       msg2 db "Alive n kinkn", 10, 0
-     6 00000017 696E6B6E0A00       
-     7                                    msg2_len equ $-msg2-1
-     8 0000001D 1F85EB51B81E0940          pi dq 3.14 ; float
-     9 00000025 5C8FC2F528DC2640          num dq 11.43
-    10 0000002D 20000000                  num_n dd 32
-    11 00000031 6E756D5F6E7B25647D-       fmt_str db "num_n{%d}, pi{%f}, num{%e}", 10, 0
-    11 0000003A 2C2070697B25667D2C-
-    11 00000043 206E756D7B25657D0A-
-    11 0000004C 00                 
-    12                                    fmt_str_len equ $-fmt_str-1
-    13                                  
-    14                                  section .bss
-    15                                  
-    16                                  section .text
-    17                                    extern printf
-    18                                    global main
-    19                                  
-    20                                  main:
-    21 00000000 55                        push rbp              ; prologue (save base pointer)
-    22 00000001 4889E5                    mov rbp, rsp          ; prologue (repleace base pointer with current stack pointer)
-    23                                  
-    24 00000004 B801000000                mov rax, 1
-    25 00000009 BF01000000                mov rdi, 1
-    26 0000000E 48BE-                     mov rsi, msg
-    26 00000010 [0000000000000000] 
-    27 00000018 BA0D000000                mov rdx, msg_len
-    28 0000001D 0F05                      syscall
-    29                                  
-    30 0000001F B801000000                mov rax, 1
-    31 00000024 BF01000000                mov rdi, 1
-    32 00000029 48BE-                     mov rsi, msg2
-    32 0000002B [0E00000000000000] 
-    33 00000033 BA0E000000                mov rdx, msg2_len
-    34 00000038 0F05                      syscall
-    35                                  
-    36 0000003A B802000000                mov rax, 2 ; 2 xmm reg used
-    37 0000003F 48BF-                     mov rdi, fmt_str
-    37 00000041 [3100000000000000] 
-    38 00000049 488B3425[2D000000]        mov rsi, [num_n]
-    39 00000051 F30F7E0425-               movq xmm0, [pi]
-    39 00000056 [1D000000]         
-    40 0000005A F30F7E0C25-               movq xmm1, [num]
-    40 0000005F [25000000]         
-    41 00000063 E8(00000000)              call printf
-    42                                  
-    43                                  
-    44                                  
-    45 00000068 4889EC                    mov rsp, rbp          ; epilogue (base pointer as the stack pointer)
-    46 0000006B 5D                        pop rbp               ; epilogue (revert original base pointer)
-    47 0000006C B83C000000                mov rax, 60
-    48 00000071 BF00000000                mov edi, 0
-    49 00000076 0F05                      syscall
+     1                                  ; hello.asm
+     2                                  section .data
+     3 00000000 68656C6C6F2C20776F-       msg db "hello, world", 0
+     3 00000009 726C6400           
+     4                                  
+     5                                  section .bss
+     6                                  
+     7                                  section .text
+     8                                    global main
+     9                                  
+    10                                  main:
+    11 00000000 B801000000                mov rax, 1      ; 1 = write
+    12 00000005 BF01000000                mov rdi, 1      ; 1 = to stdout
+    13 0000000A 48BE-                     mov rsi, msg    ; msg
+    13 0000000C [0000000000000000] 
+    14 00000014 BA0C000000                mov rdx, 12     ; length of string without 0
+    15 00000019 0F05                      syscall      ; do it
+    16 0000001B B83C000000                mov rax, 60     ; 60 = exit
+    17 00000020 BF00000000                mov rdi, 0      ; 0 = success return code
+    18 00000025 0F05                      syscall      ; do it
