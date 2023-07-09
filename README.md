@@ -34,6 +34,8 @@
 
 1. https://beej.us/guide/bgc/html/split/chapter-atomics.html
 
+3. https://en.wikibooks.org/wiki/C_Programming/Preprocessor_directives_and_macros#X-Macros
+
 ## Misc.
 
 1. https://en.cppreference.com/w/c/preprocessor/impl
